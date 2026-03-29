@@ -4,6 +4,7 @@ import { QQBot } from './bot';
 import { QQGuildBot } from './bot/guild';
 import { logDebug } from './logger';
 import { parseQQMarkdownElement, QQMarkdownRequest } from './markdown';
+import { applyAutoStream, clearAutoStream, updateAutoStream } from './stream';
 
 export const escapeMarkdown = (val: string) =>
   val
@@ -264,6 +265,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
   private rows: QQ.Button[][] = [];
   private attachedFile: QQ.Message.File.Response;
   private customRequest: QQMarkdownRequest;
+  private customAutoStream = false;
   private retry = false;
 
   // 先图后文
@@ -319,6 +321,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
         };
       }
     }
+    applyAutoStream(this.options.session, data, this.customAutoStream);
     const session = this.bot.session();
     session.type = 'send';
     const send = async () =>
@@ -330,6 +333,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
           : await this.bot.internal.sendMessage(this.session.channelId, data);
         if (resp.id && !resp.audit_id)
         {
+          updateAutoStream(this.options.session, data, resp.id);
           session.messageId = resp.id;
           session.timestamp = new Date(resp.timestamp).valueOf();
           session.channelId = this.session.channelId;
@@ -374,6 +378,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     this.attachedFile = null;
     this.rows = [];
     this.customRequest = null;
+    this.customAutoStream = false;
     this.useMarkdown = false;
     this.retry = false;
   }
@@ -503,11 +508,16 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
   async visit(element: h)
   {
     const { type, attrs, children } = element;
-    const customRequest = parseQQMarkdownElement(element);
-    if (customRequest)
+    const customPayload = parseQQMarkdownElement(element);
+    if (customPayload)
     {
       await this.flush();
-      this.customRequest = customRequest;
+      this.customRequest = customPayload.request;
+      this.customAutoStream = customPayload.autoStream;
+      if (!customPayload.autoStream && !customPayload.request.stream)
+      {
+        clearAutoStream(this.options.session);
+      }
       await this.flush();
     } else if (type === 'text')
     {

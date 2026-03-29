@@ -416,6 +416,13 @@ export namespace Message
     /** markdown 模版 key 对应的 values ，列表长度大小为 1 代表单 value 值，长度大于1则为列表类型的参数 values 传参数 */
     values: string[];
   }
+  export interface Stream
+  {
+    state: number;
+    id?: string;
+    index?: number;
+    reset?: boolean;
+  }
   export interface Reference
   {
     /** 需要引用回复的消息 id */
@@ -456,6 +463,7 @@ export namespace Message
     event_id?: string;
     msg_id?: string;
     msg_seq?: number;
+    stream?: Stream;
     media?: Partial<File.Response>;
   }
 

@@ -2,6 +2,11 @@ import { Dict, h } from 'koishi';
 import * as QQ from './types';
 
 export type QQMarkdownRequest = Omit<QQ.Message.Request, 'msg_id' | 'msg_seq' | 'event_id'>;
+export interface QQMarkdownPayload
+{
+  request: QQMarkdownRequest;
+  autoStream?: boolean;
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -49,13 +54,19 @@ function createRequest(message: QQMarkdownRequest): QQMarkdownRequest
   return message;
 }
 
-function createMarkdownRequest(markdown: QQ.Message.Markdown, keyboard?: Partial<QQ.MessageKeyboard>, content?: string): QQMarkdownRequest
+function createPayload(request: QQMarkdownRequest, autoStream?: boolean): QQMarkdownPayload
+{
+  return { request, autoStream };
+}
+
+function createMarkdownRequest(markdown: QQ.Message.Markdown, keyboard?: Partial<QQ.MessageKeyboard>, content?: string, stream?: QQ.Message.Stream): QQMarkdownRequest
 {
   return createRequest({
     msg_type: QQ.Message.Type.MARKDOWN,
     ...(content !== undefined ? { content } : {}),
     markdown,
     ...(keyboard ? { keyboard } : {}),
+    ...(stream ? { stream } : {}),
   });
 }
 
@@ -286,50 +297,152 @@ function parseKeyboard(value: unknown)
   return result;
 }
 
+function parseStream(value: unknown)
+{
+  if (!isRecord(value) || typeof value.state !== 'number')
+  {
+    return;
+  }
+  const result: QQ.Message.Stream = {
+    state: value.state,
+  };
+  if (typeof value.id === 'string')
+  {
+    result.id = value.id;
+  }
+  if (typeof value.index === 'number')
+  {
+    result.index = value.index;
+  }
+  if (typeof value.reset === 'boolean')
+  {
+    result.reset = value.reset;
+  }
+  return result;
+}
+
+function parseAutoStream(value: unknown)
+{
+  if (typeof value === 'boolean')
+  {
+    return value;
+  }
+}
+
+function parseWrapper(value: unknown)
+{
+  if (!isRecord(value))
+  {
+    return;
+  }
+  if ('markdown' in value || 'keyboard' in value || 'id' in value || 'templateId' in value)
+  {
+    return value;
+  }
+}
+
 function parseJsonMessage(attrs: Dict, children: readonly h[])
 {
+  const stream = parseStream(attrs.stream);
+  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
+  const keyboardSource = wrapper?.keyboard ?? attrs.keyboard;
   const templateId = typeof attrs.id === 'string'
     ? attrs.id
-    : typeof attrs.keyboard === 'string'
-      ? attrs.keyboard
+    : typeof attrs.templateId === 'string'
+      ? attrs.templateId
+      : typeof wrapper?.id === 'string'
+        ? wrapper.id
+        : typeof wrapper?.templateId === 'string'
+          ? wrapper.templateId
+          : typeof keyboardSource === 'string'
+            ? keyboardSource
+            : typeof attrs.content === 'string'
+              ? attrs.content
       : extractMarkdownText(children).trim();
-  const keyboard = parseKeyboard(attrs.keyboard) || (templateId ? { id: templateId } : undefined);
+  const keyboard = parseKeyboard(keyboardSource) || (templateId ? { id: templateId } : undefined);
   if (!keyboard?.id)
   {
     return;
   }
-  return createRequest({
+  return createPayload(createRequest({
     msg_type: QQ.Message.Type.MARKDOWN,
     content: '',
     keyboard,
-  });
+    ...(stream ? { stream } : {}),
+  }), autoStream);
 }
 
-function parseTemplateMarkdown(attrs: Dict)
+function getMarkdownContent(attrs: Dict, children: readonly h[])
 {
-  const markdown = parseMarkdown(attrs.markdown);
+  const content = typeof attrs.content === 'string'
+    ? attrs.content
+    : extractMarkdownText(children) || ' ';
+  return { content };
+}
+
+function parseTemplateMarkdown(attrs: Dict, children: readonly h[])
+{
+  const stream = parseStream(attrs.stream);
+  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
+  const keyboard = parseKeyboard(attrs.keyboard ?? wrapper?.keyboard);
+  const directMarkdown = parseMarkdown(attrs);
+  if (directMarkdown?.custom_template_id)
+  {
+    return createPayload(createMarkdownRequest(directMarkdown, keyboard, undefined, stream), autoStream);
+  }
+  const { content } = getMarkdownContent(attrs, children);
+  const markdownSource = wrapper?.markdown ?? attrs.markdown;
+  if (!markdownSource)
+  {
+    return createPayload(createMarkdownRequest({
+      content,
+    }, undefined, undefined, stream), autoStream);
+  }
+  const markdown = parseMarkdown(markdownSource);
   if (!markdown?.custom_template_id)
   {
     return;
   }
-  return createMarkdownRequest(markdown, parseKeyboard(attrs.keyboard));
+  return createPayload(createMarkdownRequest(markdown, keyboard, undefined, stream), autoStream);
 }
 
-function parseRawMarkdown(attrs: Dict)
+function parseRawMarkdown(attrs: Dict, children: readonly h[])
 {
-  const markdown = parseMarkdown(attrs.markdown);
+  const stream = parseStream(attrs.stream);
+  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
+  const keyboard = parseKeyboard(attrs.keyboard ?? wrapper?.keyboard);
+  const directMarkdown = parseMarkdown(attrs);
+  if (directMarkdown?.content)
+  {
+    return createPayload(createMarkdownRequest(directMarkdown, keyboard, undefined, stream), autoStream);
+  }
+  const { content } = getMarkdownContent(attrs, children);
+  const markdownSource = wrapper?.markdown ?? attrs.markdown;
+  if (!markdownSource)
+  {
+    return createPayload(createMarkdownRequest({
+      content,
+    }, keyboard, undefined, stream), autoStream);
+  }
+  const markdown = parseMarkdown(markdownSource);
   if (!markdown?.content)
   {
     return;
   }
-  return createMarkdownRequest(markdown, parseKeyboard(attrs.keyboard));
+  return createPayload(createMarkdownRequest(markdown, keyboard, undefined, stream), autoStream);
 }
 
-function parseRawMarkdownWithoutKeyboard(children: readonly h[])
+function parseRawMarkdownWithoutKeyboard(attrs: Dict, children: readonly h[])
 {
-  return createMarkdownRequest({
-    content: extractMarkdownText(children) || ' ',
-  });
+  const stream = parseStream(attrs.stream);
+  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const { content } = getMarkdownContent(attrs, children);
+  return createPayload(createMarkdownRequest({
+    content,
+  }, undefined, undefined, stream), autoStream);
 }
 
 export function parseQQMarkdownElement(element: h)
@@ -337,7 +450,7 @@ export function parseQQMarkdownElement(element: h)
   const { type, attrs, children } = element;
   if (type === 'markdown' || type === 'qq:rawmarkdown-without-keyboard')
   {
-    return parseRawMarkdownWithoutKeyboard(children);
+    return parseRawMarkdownWithoutKeyboard(attrs, children);
   }
   if (type === 'qq:json')
   {
@@ -345,10 +458,10 @@ export function parseQQMarkdownElement(element: h)
   }
   if (type === 'qq:markdown')
   {
-    return parseTemplateMarkdown(attrs);
+    return parseTemplateMarkdown(attrs, children);
   }
   if (type === 'qq:rawmarkdown')
   {
-    return parseRawMarkdown(attrs);
+    return parseRawMarkdown(attrs, children);
   }
 }

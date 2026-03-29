@@ -175,9 +175,9 @@ export namespace QQBot
 
   export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
-      id: Schema.string().description('机器人 id。').required(),
-      token: Schema.string().description('机器人令牌。').role('secret'),
-      secret: Schema.string().description('机器人密钥。').role('secret'),
+      id: Schema.string().description('机器人的账号ID。').required(),
+      secret: Schema.string().description('机器人的密钥。').role('secret'),
+      token: Schema.string().description('机器人的令牌。').role('secret'),
       type: Schema.union(['public', 'private'] as const).description('机器人类型。').default('public'),
       sandbox: Schema.boolean().description('是否开启沙箱模式。').default(false),
       endpoint: Schema.string().role('link').description('要连接的服务器地址。').default('https://api.sgroup.qq.com/'),

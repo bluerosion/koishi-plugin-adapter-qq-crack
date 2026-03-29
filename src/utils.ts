@@ -1,6 +1,7 @@
 import { Bot, Context, h, Session, Universal } from 'koishi';
 import * as QQ from './types';
 import { QQBot } from './bot';
+import { patchSessionUserName } from './user';
 
 export const decodeGuild = (guild: QQ.Guild): Universal.Guild => ({
   id: guild.id,
@@ -277,5 +278,6 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
   {
     return;
   }
+  await patchSessionUserName(bot, session);
   return session;
 }

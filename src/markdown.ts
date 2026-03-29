@@ -321,11 +321,11 @@ function parseStream(value: unknown)
   return result;
 }
 
-function parseAutoStream(value: unknown)
+function parseAutoStream(attrs: Dict)
 {
-  if (typeof value === 'boolean')
+  if (typeof attrs.stream === 'boolean')
   {
-    return value;
+    return attrs.stream;
   }
 }
 
@@ -344,7 +344,7 @@ function parseWrapper(value: unknown)
 function parseJsonMessage(attrs: Dict, children: readonly h[])
 {
   const stream = parseStream(attrs.stream);
-  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const autoStream = stream ? undefined : parseAutoStream(attrs);
   const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
   const keyboardSource = wrapper?.keyboard ?? attrs.keyboard;
   const templateId = typeof attrs.id === 'string'
@@ -384,7 +384,7 @@ function getMarkdownContent(attrs: Dict, children: readonly h[])
 function parseTemplateMarkdown(attrs: Dict, children: readonly h[])
 {
   const stream = parseStream(attrs.stream);
-  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const autoStream = stream ? undefined : parseAutoStream(attrs);
   const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
   const keyboard = parseKeyboard(attrs.keyboard ?? wrapper?.keyboard);
   const directMarkdown = parseMarkdown(attrs);
@@ -411,7 +411,7 @@ function parseTemplateMarkdown(attrs: Dict, children: readonly h[])
 function parseRawMarkdown(attrs: Dict, children: readonly h[])
 {
   const stream = parseStream(attrs.stream);
-  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const autoStream = stream ? undefined : parseAutoStream(attrs);
   const wrapper = parseWrapper(attrs.content) || parseWrapper(attrs.markdown);
   const keyboard = parseKeyboard(attrs.keyboard ?? wrapper?.keyboard);
   const directMarkdown = parseMarkdown(attrs);
@@ -438,7 +438,7 @@ function parseRawMarkdown(attrs: Dict, children: readonly h[])
 function parseRawMarkdownWithoutKeyboard(attrs: Dict, children: readonly h[])
 {
   const stream = parseStream(attrs.stream);
-  const autoStream = stream ? undefined : parseAutoStream(attrs.steam);
+  const autoStream = stream ? undefined : parseAutoStream(attrs);
   const { content } = getMarkdownContent(attrs, children);
   return createPayload(createMarkdownRequest({
     content,

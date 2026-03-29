@@ -3,6 +3,7 @@ import * as QQ from './types';
 import { QQBot } from './bot';
 import { patchSessionUserName } from './user';
 import { toPrivateChannelId } from './channel';
+import { extractReferenceFromExt, registerMessageReference } from './reference';
 
 export const decodeGuild = (guild: QQ.Guild): Universal.Guild => ({
   id: guild.id,
@@ -43,6 +44,8 @@ export function decodeGroupMessage(
 )
 {
   message.id = data.id;
+  // 记录消息引用索引，后续 h.quote() 优先使用平台认可的 REFIDX。
+  registerMessageReference(data.id, data.message_scene?.ext?.map(extractReferenceFromExt).find(Boolean));
   message.elements = [];
   if (data.content.length) message.elements.push(h.text(data.content));
   for (const attachment of (data.attachments ?? []))

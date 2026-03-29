@@ -6,6 +6,7 @@ import { logDebug } from './logger';
 import { parseQQMarkdownElement, QQMarkdownRequest } from './markdown';
 import { applyAutoStream, clearAutoStream, updateAutoStream } from './stream';
 import { fromPrivateChannelId } from './channel';
+import { registerMessageReference, resolveMessageReference } from './reference';
 
 export const escapeMarkdown = (val: string) =>
   val
@@ -100,7 +101,7 @@ export class QQGuildMessageEncoder<C extends Context = Context> extends MessageE
           },
           ...(this.reference ? {
             message_reference: {
-              message_id: this.reference,
+              message_id: resolveMessageReference(this.reference),
             },
           } : {}),
           ...(this.passiveEventId ? {
@@ -142,6 +143,7 @@ export class QQGuildMessageEncoder<C extends Context = Context> extends MessageE
      */
     if (r?.id)
     {
+      registerMessageReference(r.id, r.ext_info?.ref_idx);
       session.messageId = r.id;
       session.app.emit(session, 'send', session);
       this.results.push(session.event.message);
@@ -162,6 +164,7 @@ export class QQGuildMessageEncoder<C extends Context = Context> extends MessageE
     this.file = null;
     this.filename = null;
     this.fileUrl = null;
+    this.reference = null;
     this.retry = false;
   }
 
@@ -269,6 +272,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
   private customRequest: QQMarkdownRequest;
   private customAutoStream = false;
   private retry = false;
+  private reference: string;
 
   // 先图后文
   async flush()
@@ -300,6 +304,12 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       msg_seq,
       event_id,
     };
+    if (this.reference && !data.message_reference)
+    {
+      data.message_reference = {
+        message_id: resolveMessageReference(this.reference),
+      };
+    }
     const autoStreamText = Boolean(
       this.bot.config.autoStreamText
       && !this.customRequest
@@ -362,6 +372,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
         const resp = await sendRequest(data);
         if (resp.id && !resp.audit_id)
         {
+          registerMessageReference(resp.id, resp.ext_info?.ref_idx);
           updateAutoStream(this.options.session, data, resp.id);
           session.messageId = resp.id;
           session.timestamp = new Date(resp.timestamp).valueOf();
@@ -410,6 +421,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     this.customAutoStream = false;
     this.useMarkdown = false;
     this.plainTextOnly = true;
+    this.reference = null;
     this.retry = false;
   }
 
@@ -552,6 +564,11 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     } else if (type === 'text')
     {
       this.content += attrs.content;
+    } else if (type === 'quote')
+    {
+      // 先记录引用目标，真正发送时再统一转换成平台接受的引用 ID。
+      this.reference = attrs.id;
+      await this.flush();
     } else if (type === 'passive')
     {
       if (attrs.messageId) this.passiveId = attrs.messageId;

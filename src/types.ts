@@ -430,6 +430,16 @@ export namespace Message
     /** 是否忽略获取引用消息详情错误，默认否 */
     ignore_get_message_error?: boolean;
   }
+  export interface SendResponse
+  {
+    id: string;
+    timestamp: string;
+    audit_id?: string;
+    audit_tips?: string;
+    ext_info?: {
+      ref_idx?: string;
+    };
+  }
   export interface ChannelRequest
   {
     content?: string;
@@ -475,6 +485,9 @@ export namespace Message
     pinned: boolean;
     embeds: Embed[];
     mentionEveryone: boolean;
+    ext_info?: {
+      ref_idx?: string;
+    };
   }
 
   export type Response = ResponseBase & {
@@ -1340,6 +1353,10 @@ export interface UserMessage
   timestamp: string;
   group_id: string;
   attachments?: Attachment[]; // not listed in document?
+  message_scene?: {
+    ext?: string[];
+    source?: string;
+  };
 }
 
 export enum ChatType

@@ -4,7 +4,7 @@ import { QQBot } from './bot';
 import { QQGuildBot } from './bot/guild';
 import { logDebug } from './logger';
 import { parseQQMarkdownElement, QQMarkdownRequest } from './markdown';
-import { applyAutoStream, clearAutoStream, createAutoStreamFinalRequest, getAutoStreamFinalDelay, scheduleAutoStreamFinal, updateAutoStream } from './stream';
+import { applyAutoStream, clearAutoStream, updateAutoStream } from './stream';
 import { fromPrivateChannelId } from './channel';
 
 export const escapeMarkdown = (val: string) =>
@@ -363,30 +363,6 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
         if (resp.id && !resp.audit_id)
         {
           updateAutoStream(this.options.session, data, resp.id);
-          if (shouldAutoStream)
-          {
-            const finalRequest = createAutoStreamFinalRequest(data, resp.id);
-            if (finalRequest)
-            {
-              if (typeof finalRequest.msg_seq === 'number' && this.options?.session?.messageId)
-              {
-                this.options.session['seq'] = finalRequest.msg_seq;
-              }
-              const delay = getAutoStreamFinalDelay(data);
-              scheduleAutoStreamFinal(this.bot.ctx, this.options.session, delay, () =>
-              {
-                void sendRequest(finalRequest)
-                  .catch((error) =>
-                  {
-                    this.bot.logger.warn(error);
-                  })
-                  .finally(() =>
-                  {
-                    clearAutoStream(this.options.session);
-                  });
-              });
-            }
-          }
           session.messageId = resp.id;
           session.timestamp = new Date(resp.timestamp).valueOf();
           session.channelId = this.session.channelId;

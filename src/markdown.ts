@@ -445,6 +445,76 @@ function parseRawMarkdownWithoutKeyboard(attrs: Dict, children: readonly h[])
   }, undefined, undefined, stream), autoStream);
 }
 
+function parseButtonElement(attrs: Dict, children: readonly h[])
+{
+  const text = typeof attrs.text === 'string' ? attrs.text : extractMarkdownText(children);
+  const render_data: QQ.Button['render_data'] = {
+    label: text,
+  };
+  if (typeof attrs.visited_label === 'string')
+  {
+    render_data.visited_label = attrs.visited_label;
+  }
+  if (typeof attrs.style === 'number')
+  {
+    render_data.style = attrs.style;
+  }
+  let permission: QQ.Button['action']['permission'] | undefined;
+  if (isRecord(attrs.permission) && typeof attrs.permission.type === 'number')
+  {
+    permission = {
+      type: attrs.permission.type,
+    };
+    if (isStringArray(attrs.permission.specify_user_ids))
+    {
+      permission.specify_user_ids = attrs.permission.specify_user_ids;
+    }
+    if (isStringArray(attrs.permission.specify_role_ids))
+    {
+      permission.specify_role_ids = attrs.permission.specify_role_ids;
+    }
+  }
+  const actionSource = isRecord(attrs.action) ? attrs.action : undefined;
+  const action = actionSource && typeof actionSource.type === 'number' && typeof actionSource.data === 'string'
+    ? {
+      type: actionSource.type,
+      permission: permission ?? { type: 2 },
+      data: actionSource.data,
+      ...(typeof actionSource.reply === 'boolean' ? { reply: actionSource.reply } : {}),
+      ...(typeof actionSource.enter === 'boolean' ? { enter: actionSource.enter } : {}),
+      ...(typeof actionSource.anchor === 'number' ? { anchor: actionSource.anchor } : {}),
+      ...(typeof actionSource.click_limit === 'number' ? { click_limit: actionSource.click_limit } : {}),
+      ...(typeof actionSource.at_bot_show_channel_list === 'boolean' ? { at_bot_show_channel_list: actionSource.at_bot_show_channel_list } : {}),
+      ...(typeof actionSource.unsupport_tips === 'string' ? { unsupport_tips: actionSource.unsupport_tips } : {}),
+    }
+    : (() =>
+    {
+      const type = typeof attrs.type === 'string' ? attrs.type : 'action';
+      const href = typeof attrs.href === 'string' ? attrs.href : undefined;
+      const defaultData = type === 'link' ? (href || '') : type === 'input' ? text : typeof attrs.id === 'string' ? attrs.id : text;
+      if (!defaultData)
+      {
+        return;
+      }
+      return {
+        type: type === 'link' ? 0 : type === 'input' ? 2 : 1,
+        permission: { type: 2 },
+        data: defaultData,
+        ...(type === 'input' ? { enter: true } : {}),
+        ...(type === 'link' && href ? { data: href } : {}),
+      };
+    })();
+  if (!action)
+  {
+    return;
+  }
+  return {
+    ...(typeof attrs.id === 'string' ? { id: attrs.id } : {}),
+    render_data,
+    action,
+  } satisfies QQ.Button;
+}
+
 export function parseQQMarkdownElement(element: h)
 {
   const { type, attrs, children } = element;
@@ -463,5 +533,18 @@ export function parseQQMarkdownElement(element: h)
   if (type === 'qq:rawmarkdown')
   {
     return parseRawMarkdown(attrs, children);
+  }
+  if (type === 'qq:button' || type === 'button')
+  {
+    const button = parseButtonElement(attrs, children);
+    if (!button)
+    {
+      return;
+    }
+    return createPayload(createMarkdownRequest({ content: ' ' }, {
+      content: {
+        rows: [{ buttons: [button] }],
+      },
+    }));
   }
 }

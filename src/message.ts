@@ -504,22 +504,31 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
 
   decodeButton(attrs: Dict, label: string)
   {
+    const type = typeof attrs.type === 'string' ? attrs.type : 'action';
+    const href = typeof attrs.href === 'string' ? attrs.href : undefined;
     const result: QQ.Button = {
-      id: attrs.id,
+      ...(typeof attrs.id === 'string' ? { id: attrs.id } : {}),
       render_data: {
         label,
         visited_label: label,
-        style: attrs.class === 'primary' ? 1 : 0,
+        style: typeof attrs.style === 'number'
+          ? attrs.style
+          : (typeof attrs.class === 'string' && attrs.class === 'primary' ? 1 : 0),
       },
       action: {
-        type: attrs.type === 'input' ? 2
-          : (attrs.type === 'link' ? 0 : 1),
+        type: type === 'input' ? 2 : type === 'link' ? 0 : 1,
         permission: {
           type: 2,
         },
-        data: attrs.type === 'input'
-          ? attrs.text : attrs.type === 'link'
-            ? attrs.href : attrs.id,
+        data: type === 'input'
+          ? (typeof attrs.text === 'string' ? attrs.text : label)
+          : type === 'link'
+            ? (href || '')
+            : typeof attrs.data === 'string'
+              ? attrs.data
+              : typeof attrs.id === 'string'
+                ? attrs.id
+                : label,
       },
     };
     return result;
@@ -546,7 +555,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
   {
     return this.rows.map(v => ({
       buttons: v,
-    })) as QQ.InlineKeyboardRow[];
+    }));
   }
 
   async visit(element: h)
@@ -661,7 +670,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       this.rows.push([]);
       await this.render(children);
       this.rows.push([]);
-    } else if (type === 'button')
+    } else if (type === 'button' || type === 'qq:button')
     {
       this.plainTextOnly = false;
       this.useMarkdown = true;

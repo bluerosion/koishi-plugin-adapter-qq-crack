@@ -518,7 +518,7 @@ function parseButtonElement(attrs: Dict, children: readonly h[])
 export function parseQQMarkdownElement(element: h)
 {
   const { type, attrs, children } = element;
-  if (type === 'markdown' || type === 'qq:rawmarkdown-without-keyboard')
+  if (type === 'qq:rawmarkdown-without-keyboard')
   {
     return parseRawMarkdownWithoutKeyboard(attrs, children);
   }
@@ -533,18 +533,5 @@ export function parseQQMarkdownElement(element: h)
   if (type === 'qq:rawmarkdown')
   {
     return parseRawMarkdown(attrs, children);
-  }
-  if (type === 'qq:button' || type === 'button')
-  {
-    const button = parseButtonElement(attrs, children);
-    if (!button)
-    {
-      return;
-    }
-    return createPayload(createMarkdownRequest({ content: ' ' }, {
-      content: {
-        rows: [{ buttons: [button] }],
-      },
-    }));
   }
 }

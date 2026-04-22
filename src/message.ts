@@ -3,7 +3,7 @@ import { Context, Dict, h, MessageEncoder } from 'koishi';
 import { QQBot } from './bot';
 import { QQGuildBot } from './bot/guild';
 import { logDebug } from './logger';
-import { parseQQMarkdownElement, QQMarkdownRequest } from './markdown';
+import { extractMarkdownText, parseQQMarkdownElement, QQMarkdownRequest } from './markdown';
 import { applyAutoStream, clearAutoStream, updateAutoStream } from './stream';
 import { fromPrivateChannelId } from './channel';
 import { registerMessageReference, resolveMessageReference } from './reference';
@@ -332,7 +332,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       data.msg_type = QQ.Message.Type.MARKDOWN;
       delete data.content;
       data.markdown = {
-        content: escapeMarkdown(this.content) || ' ',
+        content: this.content || ' ',
       };
       if (this.rows.length)
       {
@@ -504,33 +504,53 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
 
   decodeButton(attrs: Dict, label: string)
   {
-    const type = typeof attrs.type === 'string' ? attrs.type : 'action';
+    const type = attrs.type;
     const href = typeof attrs.href === 'string' ? attrs.href : undefined;
+    const text = typeof attrs.text === 'string' ? attrs.text : undefined;
+
+    // 确定发送的数据 (action.data)
+    const actionData = typeof attrs.data === 'string'
+      ? attrs.data
+      : type === 'link'
+        ? (href || '')
+        : text || label || (typeof attrs.id === 'string' ? attrs.id : '');
+
+    // 确定显示的文字 (render_data.label)
+    // 优先级：子元素(label) > text属性 > actionData
+    const displayLabel = label || text || actionData;
+
     const result: QQ.Button = {
       ...(typeof attrs.id === 'string' ? { id: attrs.id } : {}),
       render_data: {
-        label,
-        visited_label: label,
+        label: displayLabel,
+        visited_label: displayLabel,
         style: typeof attrs.style === 'number'
           ? attrs.style
-          : (typeof attrs.class === 'string' && attrs.class === 'primary' ? 1 : 0),
+          : (typeof attrs.class === 'string' && attrs.class === 'primary' ? 1 : 1), // 默认 style = 1
       },
       action: {
-        type: type === 'input' ? 2 : type === 'link' ? 0 : 1,
+        type: typeof type === 'number' ? type : (type === 'link' ? 0 : 2), // 默认 type = 2
         permission: {
           type: 2,
         },
-        data: type === 'input'
-          ? (typeof attrs.text === 'string' ? attrs.text : label)
-          : type === 'link'
-            ? (href || '')
-            : typeof attrs.data === 'string'
-              ? attrs.data
-              : typeof attrs.id === 'string'
-                ? attrs.id
-                : label,
+        data: actionData,
+        ...(type !== 'link' ? { enter: true } : {}),
       },
     };
+
+    if (attrs.action && typeof attrs.action === 'object')
+    {
+      Object.assign(result.action, attrs.action);
+    }
+    if (attrs.render_data && typeof attrs.render_data === 'object')
+    {
+      Object.assign(result.render_data, attrs.render_data);
+    }
+    if (attrs.permission && typeof attrs.permission === 'object')
+    {
+      result.action.permission = attrs.permission;
+    }
+
     return result;
   }
 
@@ -561,6 +581,32 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
   async visit(element: h)
   {
     const { type, attrs, children } = element;
+
+    if (type === 'markdown')
+    {
+      this.plainTextOnly = false;
+      if (!this.useMarkdown)
+      {
+        this.content = escapeMarkdown(this.content);
+        this.useMarkdown = true;
+      }
+      this.content += extractMarkdownText(children);
+      return;
+    }
+
+    if (type === 'button' || type === 'qq:button')
+    {
+      this.plainTextOnly = false;
+      if (!this.useMarkdown)
+      {
+        this.content = escapeMarkdown(this.content);
+        this.useMarkdown = true;
+      }
+      const last = this.lastRow();
+      last.push(this.decodeButton(attrs, extractMarkdownText(children)));
+      return;
+    }
+
     const arkPayload = parseQQArkElement(element);
     const customPayload = parseQQMarkdownElement(element);
     if (arkPayload)
@@ -581,7 +627,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       await this.flush();
     } else if (type === 'text')
     {
-      this.content += attrs.content;
+      this.content += this.useMarkdown ? escapeMarkdown(attrs.content) : attrs.content;
     } else if (type === 'quote')
     {
       // 先记录引用目标，真正发送时再统一转换成平台接受的引用 ID。
@@ -666,16 +712,14 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     } else if (type === 'button-group')
     {
       this.plainTextOnly = false;
-      this.useMarkdown = true;
+      if (!this.useMarkdown)
+      {
+        this.content = escapeMarkdown(this.content);
+        this.useMarkdown = true;
+      }
       this.rows.push([]);
       await this.render(children);
       this.rows.push([]);
-    } else if (type === 'button' || type === 'qq:button')
-    {
-      this.plainTextOnly = false;
-      this.useMarkdown = true;
-      const last = this.lastRow();
-      last.push(this.decodeButton(attrs, children.join('')));
     } else if (type === 'message')
     {
       await this.flush();

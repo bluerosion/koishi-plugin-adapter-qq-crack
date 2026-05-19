@@ -82,7 +82,7 @@ async function loadUserName(bot: QQBot, userId: string)
   return task;
 }
 
-function scheduleUserNameWrite(bot: QQBot, userId: string, name: string)
+export function scheduleUserNameWrite(bot: QQBot, userId: string, name: string)
 {
   const platform = bot.platform;
   setCachedUserName(platform, userId, name);

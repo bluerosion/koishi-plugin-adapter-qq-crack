@@ -1340,20 +1340,20 @@ export namespace Forum
   }
 }
 
-export interface GroupMember
-{
-  id: string;
-  username?: string;
-  bot?: boolean;
-  member_openid?: string;
-  union_openid?: string;
-}
-
 export interface UserMessage
 {
   id: string;
-  author: GroupMember;
-  mention?: GroupMember[];
+  author: {
+    id: string;
+    username?: string;
+    bot?: boolean;
+    member_openid?: string;
+    union_openid?: string;
+  };
+  mentions?: (
+    | { scope: 'single'; } & this['author']
+    | { scope: 'all', username: '全体成员'; }
+  )[];
   content: string;
   timestamp: string;
   group_id: string;

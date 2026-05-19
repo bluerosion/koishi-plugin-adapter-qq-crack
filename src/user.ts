@@ -109,7 +109,7 @@ export function scheduleUserNameWrite(bot: QQBot, userId: string, name: string)
       await database.createUser(platform, userId, {
         name,
         flag: 0,
-        authority: bot.ctx.koishi.config.autoAuthorize || 1,
+        authority: bot.ctx.root.config.autoAuthorize || 1,
         locales: [],
         permissions: [],
         createdAt: new Date(),

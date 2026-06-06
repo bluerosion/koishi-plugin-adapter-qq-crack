@@ -36,6 +36,23 @@ export const decodeGuildMember = (member: QQ.Member): Universal.GuildMember => (
   joinedAt: new Date(member.joined_at).valueOf(),
 });
 
+/**
+ * 将 elements 里 at 机器人 openid 的元素替换成 h.at(selfId)。
+ * QQ 开放平台下发的 at 用的是机器人 openid，而 Koishi 用 selfId（AppID）
+ * 来判断是否被 at 自己，两者不一致会导致指令前缀匹配失败。
+ */
+function normalizeAtSelf(elements: h[], selfId: string, botOpenid: string): h[]
+{
+  return elements.map(el =>
+  {
+    if (el.type === 'at' && el.attrs?.id === botOpenid)
+    {
+      return h.at(selfId);
+    }
+    return el;
+  });
+}
+
 export function decodeGroupMessage(
   bot: QQBot,
   data: QQ.UserMessage,
@@ -44,23 +61,45 @@ export function decodeGroupMessage(
 )
 {
   message.id = data.id;
-  // 记录消息引用索引，后续 h.quote() 优先使用平台认可的 REFIDX。
   registerMessageReference(data.id, data.message_scene?.ext?.map(extractReferenceFromExt).find(Boolean));
   message.elements = [];
-  if (data.content.length)
+  if (data.content.trim().length)
   {
     if (data.mentions?.length)
     {
-      let content = h.escape(data.content);
-      const mentions = new Set(data.mentions
-        .map(m => m.scope === 'single' ? m.id : 'all'));
-      if (mentions.has('all'))
-        content = content.replace(/&lt;@all&gt;/g,
-          h('at', { type: 'all' }).toString());
-      content = content.replace(/&lt;@([0-9A-Z]{32})&gt;/g,
-        (raw, id) => mentions.has(id) ? h.at(id).toString() : raw);
-      message.elements.push(...h.parse(content));
+      // 构建 mentions id 集合，用于识别 content 里的 <@id> 是否在 mentions 列表中
+      const mentionIds = new Set(data.mentions
+        .filter(m => m.scope === 'single')
+        .map(m => m.id));
+      const hasAll = data.mentions.some(m => m.scope === 'all');
 
+      // 直接在原始 content 上按 <@id> / <@all> 分割，避免 h.escape 后正则复杂度问题
+      const parts = data.content.split(/(<@[^>]+>)/);
+      for (const part of parts)
+      {
+        if (!part.length) continue;
+        const atMatch = /^<@([^>]+)>$/.exec(part);
+        if (atMatch)
+        {
+          const id = atMatch[1];
+          if (id === 'all' && hasAll)
+          {
+            message.elements.push(h('at', { type: 'all' }));
+          } else if (mentionIds.has(id))
+          {
+            message.elements.push(h.at(id));
+          } else
+          {
+            // 不在 mentions 列表里，当普通文本处理
+            message.elements.push(h.text(part));
+          }
+        } else
+        {
+          message.elements.push(h.text(part));
+        }
+      }
+
+      // 将 mentions 里的用户名写入数据库缓存
       if (!bot.config.disableUserNamePersist)
         for (const mention of data.mentions)
           if (mention.scope === 'single' && mention.username)
@@ -224,13 +263,33 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
     session.isDirect = false;
     decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
     session.channelId = session.guildId;
-    session.elements.unshift(h.at(session.selfId));
+    // QQ 下发的 at 用的是机器人 openid，Koishi 用 selfId（AppID）判断是否 at 自己，需要替换
+    const botOpenid = (input.d.mentions?.find(
+      (m): m is { scope: 'single'; id: string; is_you?: boolean; } =>
+        m.scope === 'single' && !!(m as { is_you?: boolean; }).is_you,
+    ))?.id;
+    if (botOpenid)
+    {
+      session.event.message.elements = normalizeAtSelf(session.elements, session.selfId, botOpenid);
+    }
+    // 若替换后仍没有 at selfId，则补一个（兜底）
+    const alreadyAtBot = session.elements.some(el => el.type === 'at' && el.attrs?.id === session.selfId);
+    if (!alreadyAtBot) session.elements.unshift(h.at(session.selfId));
   } else if (input.t === 'GROUP_MESSAGE_CREATE')
   {
     session.type = 'message';
     session.isDirect = false;
     decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
     session.channelId = session.guildId;
+    // 全量消息里用户若 at 了机器人，同样需要将 openid 替换为 selfId
+    const botOpenid2 = (input.d.mentions?.find(
+      (m): m is { scope: 'single'; id: string; is_you?: boolean; } =>
+        m.scope === 'single' && !!(m as { is_you?: boolean; }).is_you,
+    ))?.id;
+    if (botOpenid2)
+    {
+      session.event.message.elements = normalizeAtSelf(session.elements, session.selfId, botOpenid2);
+    }
   } else if (input.t === 'C2C_MESSAGE_CREATE')
   {
     session.type = 'message';

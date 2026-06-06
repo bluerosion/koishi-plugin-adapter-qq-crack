@@ -322,7 +322,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     );
     if (!this.customRequest && this.attachedFile)
     {
-      if (!data.content.length) data.content = ' ';
+      if (!data.content.length) delete data.content;
       data.media = this.attachedFile;
       data.msg_type = QQ.Message.Type.MEDIA;
     }

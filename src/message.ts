@@ -286,7 +286,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       this.options.session['seq'] ||= 0;
       msg_id = this.options.session.messageId;
       msg_seq = ++this.options.session['seq'];
-    } else if (this.options?.session?.qq['id'] && Date.now() - this.options.session.timestamp < MSG_TIMEOUT)
+    } else if (this.options?.session?.qq?.['id'] && Date.now() - this.options.session.timestamp < MSG_TIMEOUT)
     {
       event_id = this.options.session.qq['id'];
     }

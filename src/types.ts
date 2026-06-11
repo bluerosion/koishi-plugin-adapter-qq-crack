@@ -526,6 +526,51 @@ export namespace Message
       ttl: number;
     }
 
+    export interface UploadPart
+    {
+      index: number;
+      presigned_url: string;
+    }
+
+    export interface UploadPrepareResponse
+    {
+      upload_id: string;
+      block_size: number;
+      parts: UploadPart[];
+      concurrency?: number;
+      retry_timeout?: number;
+    }
+
+    export interface UploadPrepareHashes
+    {
+      md5: string;
+      sha1: string;
+      md5_10m: string;
+    }
+
+    export interface UploadPrepareRequest
+    {
+      file_type: Type;
+      file_name: string;
+      file_size: number;
+      md5: string;
+      sha1: string;
+      md5_10m: string;
+    }
+
+    export interface UploadPartFinishRequest
+    {
+      upload_id: string;
+      part_index: number;
+      block_size: number;
+      md5: string;
+    }
+
+    export interface CompleteUploadRequest
+    {
+      upload_id: string;
+    }
+
   }
 }
 

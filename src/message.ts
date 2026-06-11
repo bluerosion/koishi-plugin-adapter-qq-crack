@@ -8,6 +8,7 @@ import { applyAutoStream, clearAutoStream, updateAutoStream } from './stream';
 import { fromPrivateChannelId } from './channel';
 import { registerMessageReference, resolveMessageReference } from './reference';
 import { parseQQArkElement } from './ark';
+import { chunkedUpload } from './chunked-upload';
 
 export const escapeMarkdown = (val: string) =>
   val
@@ -460,31 +461,48 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
     else if (type === 'audio') file_type = QQ.Message.File.Type.AUDIO;
     else if (type === 'file') file_type = QQ.Message.File.Type.FILE;
     else return;
-    const data: QQ.Message.File.Request = {
-      file_type,
-      srv_send_msg: false,
-    };
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
-    const capture = /^data:([\w/.+-]+);base64,(.*)$/.exec(url);
-    if (capture?.[2])
-    {
-      data.file_data = capture[2];
-    } else if (await this.bot.ctx.http.isLocal(url))
-    {
-      data.file_data = Buffer.from((await this.bot.ctx.http.file(url)).data).toString('base64');
-    } else
-    {
-      data.url = url;
-    }
+
+    const targetId = this.session.isDirect ? this.options.session.userId : this.session.channelId;
     let res: QQ.Message.File.Response;
+
     try
     {
-      if (this.session.isDirect)
+      const capture = /^data:([\w/.+-]+);base64,(.*)$/.exec(url);
+      let fileBuffer: Buffer | null = null;
+
+      if (capture?.[2])
       {
-        res = await this.bot.internal.sendFilePrivate(this.options.session.userId, data);
+        fileBuffer = Buffer.from(capture[2], 'base64');
+      } else if (await this.bot.ctx.http.isLocal(url))
+      {
+        fileBuffer = Buffer.from((await this.bot.ctx.http.file(url)).data);
+      }
+
+      if (fileBuffer)
+      {
+        let fileName = attrs.filename || attrs.title || attrs.name || 'file';
+        if (fileName === 'file')
+        {
+          try
+          {
+            const urlPath = new URL(url).pathname;
+            const baseName = decodeURIComponent(urlPath.split('/').pop() || '');
+            if (baseName && baseName !== '/') fileName = baseName;
+          } catch { }
+        }
+        if (fileName === 'file') fileName = `file_${Date.now()}`;
+
+        res = await chunkedUpload(this.bot, targetId, this.session.isDirect, fileBuffer, fileName, file_type);
       } else
       {
-        res = await this.bot.internal.sendFileGuild(this.session.channelId, data);
+        const data: QQ.Message.File.Request = { file_type, srv_send_msg: false, url };
+        if (this.session.isDirect)
+        {
+          res = await this.bot.internal.sendFilePrivate(targetId, data);
+        } else
+        {
+          res = await this.bot.internal.sendFileGuild(targetId, data);
+        }
       }
     } catch (e)
     {

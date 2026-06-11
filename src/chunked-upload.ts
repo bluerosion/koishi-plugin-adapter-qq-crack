@@ -59,7 +59,7 @@ async function putToPresignedUrl(
         const startTime = Date.now();
         const response = await fetch(presignedUrl, {
           method: 'PUT',
-          body: data,
+          body: new Uint8Array(data),
           headers: { 'Content-Length': String(data.length) },
           signal: controller.signal,
         });

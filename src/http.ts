@@ -36,7 +36,7 @@ export class HttpServer<C extends Context = Context> extends Adapter<C, QQBot<C>
       {
         // 校验回调签名。
         const key = this.getPrivateKey(bot.config.secret);
-      // @ts-ignore
+        // @ts-ignore
         const body = ctx.request.body[Symbol.for('unparsedBody')];
         if (!(await this.verify(key, ctx.request.header, body)))
         {

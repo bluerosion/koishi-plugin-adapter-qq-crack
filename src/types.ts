@@ -10,11 +10,11 @@ export enum Intents
    * - CHANNEL_DELETE 当channel被删除时
    */
   GUILDS = 1 << 0,
+  GUILD_MEMBER_ADD = 1 << 24,
+  GUILD_MEMBER_REMOVE = 1 << 24,
   /**
    * 频道成员事件
-   * - GUILD_MEMBER_ADD    当成员加入时
    * - GUILD_MEMBER_UPDATE 当成员资料变更时
-   * - GUILD_MEMBER_REMOVE 当成员被移除时
    */
   GUILD_MEMBERS = 1 << 1,
   /**

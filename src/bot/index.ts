@@ -136,6 +136,40 @@ export class QQBot<C extends Context = Context, T extends QQBot.Config = QQBot.C
     return this.toJSON();
   }
 
+  async getUser(userId: string, guildId?: string): Promise<Universal.User>
+  {
+    const api = this.config.userInfoApi || 'https://oiapi.net/api/Openid';
+    const appid = this.config.id;
+    if (appid && userId)
+    {
+      try
+      {
+        const response = await this.ctx.http.get(api, {
+          params: {
+            appid,
+            openid: userId,
+          },
+        });
+        if (response?.code === 1 && response?.data)
+        {
+          return {
+            id: userId,
+            name: response.data.nickname || userId,
+            avatar: response.data.avatar || `https://q.qlogo.cn/qqapp/${appid}/${userId}/640`,
+          };
+        }
+      } catch (error)
+      {
+        this.logger.warn(error);
+      }
+    }
+    return {
+      id: userId,
+      name: userId,
+      avatar: `https://q.qlogo.cn/qqapp/${appid}/${userId}/640`,
+    };
+  }
+
   async createDirectChannel(id: string)
   {
     return { id: toPrivateChannelId(id), type: Universal.Channel.Type.DIRECT };

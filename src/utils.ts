@@ -214,8 +214,8 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
 {
   let session = bot.session();
 
-  if (!['GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE', 'FRIEND_ADD', 'FRIEND_DEL',
-    'GROUP_ADD_ROBOT', 'GROUP_DEL_ROBOT', 'INTERACTION_CREATE'].includes(input.t))
+  if (!['GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE', 'GROUP_MEMBER_ADD', 'GROUP_MEMBER_UPDATE', 'GROUP_MEMBER_REMOVE',
+    'C2C_MESSAGE_CREATE', 'FRIEND_ADD', 'FRIEND_DEL', 'GROUP_ADD_ROBOT', 'GROUP_DEL_ROBOT', 'INTERACTION_CREATE'].includes(input.t))
   {
     session = bot.guildBot.session();
     session.setInternal(bot.guildBot.platform, input);

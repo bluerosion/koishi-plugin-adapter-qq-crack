@@ -145,6 +145,9 @@ export interface GatewayEvents
   GUILD_MEMBER_ADD: WithOpUser<MemberWithGuild>;
   GUILD_MEMBER_UPDATE: WithOpUser<MemberWithGuild>;
   GUILD_MEMBER_DELETE: WithOpUser<MemberWithGuild>;
+  GROUP_MEMBER_ADD: GroupMemberEvent;
+  GROUP_MEMBER_UPDATE: GroupMemberEvent;
+  GROUP_MEMBER_REMOVE: GroupMemberEvent;
   MESSAGE_DELETE: Message.DeletionPayload;
   PUBLIC_MESSAGE_DELETE: Message.DeletionPayload;
   DIRECT_MESSAGE_DELETE: Message.DeletionPayload;
@@ -749,6 +752,17 @@ export interface MemberWithGuild
   roles: string[];
   /** 用户加入频道的时间 */
   joined_at: string;
+}
+
+export interface GroupMemberEvent
+{
+  group_openid: string;
+  member_openid: string;
+  user?: User;
+  guild?: Guild;
+  member?: MemberWithGuild;
+  op_member_openid?: string;
+  timestamp: number;
 }
 
 export interface CreateGuildAnnounceParams

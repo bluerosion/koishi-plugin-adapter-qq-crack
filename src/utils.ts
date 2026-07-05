@@ -36,6 +36,22 @@ export const decodeGuildMember = (member: QQ.Member): Universal.GuildMember => (
   joinedAt: new Date(member.joined_at).valueOf(),
 });
 
+function decodeGroupMemberEvent(input: QQ.GroupMemberEvent)
+{
+  const user = input.user ? decodeUser(input.user) : { id: input.member_openid };
+  const member = input.member ? decodeGuildMember(input.member) : {
+    user,
+    nick: user.name,
+    roles: [],
+    joinedAt: input.timestamp * 1000,
+  };
+  return {
+    guild: input.guild ? decodeGuild(input.guild) : { id: input.group_openid },
+    member,
+    user,
+  };
+}
+
 /**
  * 将 elements 里 at 机器人 openid 的元素替换成 h.at(selfId)。
  * QQ 开放平台下发的 at 用的是机器人 openid，而 Koishi 用 selfId（AppID）
@@ -346,18 +362,31 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
     // {message: 'get header appid failed', code: 630006}
     // {"message":"check app privilege not pass","code":11253
     if (!bot.config.manualAcknowledge) bot.internal.acknowledgeInteraction(input.d.id, { code: 0 }).catch(() => { });
-  } else if (input.t === 'GUILD_MEMBER_ADD' || input.t === 'GUILD_MEMBER_DELETE' || input.t === 'GUILD_MEMBER_UPDATE')
+  } else if (input.t === 'GROUP_MEMBER_ADD' || input.t === 'GROUP_MEMBER_REMOVE' || input.t === 'GROUP_MEMBER_UPDATE'
+    || input.t === 'GUILD_MEMBER_ADD' || input.t === 'GUILD_MEMBER_DELETE' || input.t === 'GUILD_MEMBER_UPDATE')
   {
     session.type = {
       GUILD_MEMBER_ADD: 'guild-member-added',
       GUILD_MEMBER_UPDATE: 'guild-member-updated',
       GUILD_MEMBER_DELETE: 'guild-member-removed',
+      GROUP_MEMBER_ADD: 'guild-member-added',
+      GROUP_MEMBER_UPDATE: 'guild-member-updated',
+      GROUP_MEMBER_REMOVE: 'guild-member-removed',
     }[input.t];
-    session.guildId = input.d.guild_id;
-    session.operatorId = input.d.op_user_id;
-    // session.timestamp = new Date(input.d.joined_at).valueOf()
-    session.timestamp = Date.now();
-    session.event.user = decodeUser(input.d.user);
+    session.guildId = (input.d as QQ.GroupMemberEvent).group_openid || (input.d as QQ.MemberWithGuild).guild_id;
+    session.timestamp = (input.d as QQ.GroupMemberEvent).timestamp
+      ? (input.d as QQ.GroupMemberEvent).timestamp * 1000
+      : Date.now();
+    const { guild, member, user } = 'group_openid' in input.d
+      ? decodeGroupMemberEvent(input.d)
+      : {
+        guild: { id: input.d.guild_id },
+        member: decodeGuildMember(input.d),
+        user: decodeUser(input.d.user),
+      };
+    session.event.guild = guild;
+    session.event.member = member;
+    session.event.user = user;
   } else
   {
     return;

@@ -654,7 +654,7 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
 
   trimButtons()
   {
-    if (this.rows.length && this.rows[this.rows.length - 1].length === 0) this.rows.pop();
+    while (this.rows.length && this.rows[this.rows.length - 1].length === 0) this.rows.pop();
   }
 
   exportButtons()
@@ -826,7 +826,12 @@ export class QQMessageEncoder<C extends Context = Context> extends MessageEncode
       }
       this.rows.push([]);
       await this.render(children);
-      this.rows.push([]);
+    } else if (type === 'a')
+    {
+      this.content += attrs.href || extractMarkdownText(children);
+    } else if (type === 'i' || type === 'em' || type === 'b' || type === 'strong')
+    {
+      await this.render(children);
     } else if (type === 'message')
     {
       await this.flush();

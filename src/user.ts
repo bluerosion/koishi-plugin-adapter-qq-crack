@@ -1,6 +1,7 @@
 import { Session } from 'koishi';
 import { QQBot } from './bot';
 import { BaseConfig } from './config';
+import { decodeUser } from './utils';
 
 const USERNAME_CACHE_TTL = 10 * 60 * 1000;
 const USERNAME_WRITE_DELAY = 1000;
@@ -82,6 +83,27 @@ async function loadUserName(bot: QQBot, userId: string)
   return task;
 }
 
+async function loadUserInfo(bot: QQBot, userId: string)
+{
+  const api = bot.config.userInfoApi || 'https://oiapi.net/api/Openid';
+  const appid = bot.config.id;
+  if (!appid || !userId) return;
+  try
+  {
+    const response = await bot.ctx.http.get(api, {
+      params: {
+        appid,
+        openid: userId,
+      },
+    });
+    if (response?.code !== 1 || !response?.data) return;
+    return response.data as { nickname?: string; avatar?: string; };
+  } catch (error)
+  {
+    bot.logger.warn(error);
+  }
+}
+
 export function scheduleUserNameWrite(bot: QQBot, userId: string, name: string)
 {
   const platform = bot.platform;
@@ -137,6 +159,28 @@ export async function patchSessionUserName(bot: QQBot, session: Session)
       scheduleUserNameWrite(bot, session.userId, directName);
     }
     return;
+  }
+
+  const userInfo = await loadUserInfo(bot, session.userId);
+  if (userInfo)
+  {
+    const user = ensureSessionUser(session);
+    if (!user.name && userInfo.nickname) user.name = userInfo.nickname;
+    if (!user.avatar && userInfo.avatar) user.avatar = userInfo.avatar;
+    if (session.event.member?.user)
+    {
+      if (!session.event.member.user.name && userInfo.nickname) session.event.member.user.name = userInfo.nickname;
+      if (!session.event.member.user.avatar && userInfo.avatar) session.event.member.user.avatar = userInfo.avatar;
+    }
+    if (user.name)
+    {
+      const cfg = bot.config as BaseConfig;
+      if (!cfg.disableUserNamePersist)
+      {
+        scheduleUserNameWrite(bot, session.userId, user.name);
+      }
+      return;
+    }
   }
 
   const cachedName = getCachedUserName(bot.platform, session.userId);

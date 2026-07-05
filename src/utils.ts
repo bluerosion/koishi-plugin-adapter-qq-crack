@@ -374,6 +374,7 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
       GROUP_MEMBER_REMOVE: 'guild-member-removed',
     }[input.t];
     session.guildId = (input.d as QQ.GroupMemberEvent).group_openid || (input.d as QQ.MemberWithGuild).guild_id;
+    session.channelId = session.guildId;
     session.timestamp = (input.d as QQ.GroupMemberEvent).timestamp
       ? (input.d as QQ.GroupMemberEvent).timestamp * 1000
       : Date.now();
@@ -383,10 +384,11 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
         guild: { id: input.d.guild_id },
         member: decodeGuildMember(input.d),
         user: decodeUser(input.d.user),
-      };
+    };
     session.event.guild = guild;
     session.event.member = member;
     session.event.user = user;
+    if (!session.event.user.name && session.event.member.user?.name) session.event.user.name = session.event.member.user.name;
   } else
   {
     return;

@@ -32,6 +32,7 @@ export interface BaseConfig extends QQ.Options
   autoStreamText: boolean;
   useMarkdownIfAt: boolean;
   disableUserNamePersist: boolean;
+  userInfoApi?: string;
   protocol: 'websocket' | 'webhook';
   path?: string;
   gatewayUrl?: string;
@@ -69,6 +70,7 @@ export const Config: Schema<Config> = Schema.intersect([
     endpoint: Schema.string().role('link').description('要连接的服务器地址。').default('https://api.sgroup.qq.com/'),
     manualAcknowledge: Schema.boolean().description('手动响应回调消息。').default(false),
     gatewayUrl: Schema.string().role('link').description('覆盖 WebSocket 地址。'),
+    userInfoApi: Schema.string().role("link").default("https://oiapi.net/api/Openid").description("API 接口地址"),
   }).description('进阶设置'),
   Schema.object({
     autoStreamText: Schema.boolean().description('使用原生 Markdown 流式发送纯文本消息。').default(false),

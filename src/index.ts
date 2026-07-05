@@ -25,6 +25,7 @@ export function apply(ctx: Context, config: QQBot.Config)
 export default {
   name,
   reusable,
+  filter,
   inject,
   Config,
   apply,

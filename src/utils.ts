@@ -3,7 +3,13 @@ import * as QQ from './types';
 import { QQBot } from './bot';
 import { patchSessionUserName, scheduleUserNameWrite } from './user';
 import { toPrivateChannelId } from './channel';
-import { extractReferenceFromExt, registerMessageReference } from './reference';
+import
+{
+  extractQuotedReferenceFromExt,
+  extractReferenceFromExt,
+  registerMessageReference,
+  resolveMessageIdByReference,
+} from './reference';
 
 export const decodeGuild = (guild: QQ.Guild): Universal.Guild => ({
   id: guild.id,
@@ -69,7 +75,132 @@ function normalizeAtSelf(elements: h[], selfId: string, botOpenid: string): h[]
   });
 }
 
-export function decodeGroupMessage(
+function normalizeGroupMessageAtSelf(message: Universal.Message, selfId: string, botOpenid?: string)
+{
+  if (!botOpenid || !message.elements?.length) return;
+  const elements = message.elements.slice();
+  while (elements[0]?.type === 'text' && !elements[0].attrs?.content.trim()) elements.shift();
+  message.elements = normalizeAtSelf(elements, selfId, botOpenid);
+  message.content = message.elements.join('');
+}
+
+function resolveBotOpenid(input: QQ.UserMessage, bot: QQBot)
+{
+  const mention = input.mentions?.find(
+    (m): m is { scope: 'single'; id: string; is_you?: boolean; } =>
+      m.scope === 'single' && ('is_you' in m) && !!m.is_you,
+  );
+  return mention?.id ?? bot.selfOpenid;
+}
+
+function extractQuotedTreeContent(text: string)
+{
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const contentLabel = /^\s*\[\u6d88\u606f\u5185\u5bb9\]\s*/;
+  const stopPattern = /^\s*(?:\[\u6d88\u606f\u7c7b\u578b\]|\[\u5173\u8054\u6d88\u606f\]|---\s*第\d+条\s*---|===\s*\u6d88\u606f\b)/;
+  const nestedStart = lines.findIndex(line => /^\s*---\s*第\d+条\s*---/.test(line));
+
+  const extractFrom = (start: number) =>
+  {
+    if (start < 0 || start >= lines.length) return '';
+    const content: string[] = [];
+    for (let i = start; i < lines.length; i++)
+    {
+      const line = lines[i];
+      if (i !== start && stopPattern.test(line)) break;
+      content.push(i === start ? line.replace(contentLabel, '') : line);
+    }
+    return content.join('\n').replace(/\s+$/, '');
+  };
+
+  if (nestedStart >= 0)
+  {
+    for (let i = nestedStart + 1; i < lines.length; i++)
+    {
+      if (contentLabel.test(lines[i])) return extractFrom(i);
+    }
+  }
+  for (let i = 0; i < lines.length; i++)
+  {
+    if (contentLabel.test(lines[i])) return extractFrom(i);
+  }
+  return text;
+}
+
+function extractQuotedContentFromRenderedTree(text: string)
+{
+  if (!text.includes('[消息内容]')) return text;
+  const normalized = text.replace(/\r\n/g, '\n');
+  const start = normalized.indexOf('[消息内容]');
+  if (start < 0) return text;
+  const lines = normalized.slice(start).split('\n');
+  const content: string[] = [];
+  const firstLine = lines.shift();
+  if (!firstLine) return '';
+  content.push(firstLine.replace(/^\[消息内容\]\s*/, ''));
+  for (const line of lines)
+  {
+    if (/^\s*(?:\[消息类型\]|\[关联消息\]|---\s*第\d+条\s*---|===\s*消息\b)/.test(line)) break;
+    content.push(line);
+  }
+  return content.join('\n').replace(/\s+$/, '');
+}
+
+function decodeQuotedElement(element: NonNullable<QQ.UserMessage['msg_elements']>[number])
+{
+  const nodes: h[] = [];
+  for (const attachment of element.attachments ?? [])
+  {
+    if (attachment.content_type === 'file')
+    {
+      nodes.push(h.file(attachment.url, {
+        filename: attachment.filename,
+      }));
+    } else if (attachment.content_type.startsWith('image/'))
+    {
+      nodes.push(h.image(attachment.url));
+    } else if (attachment.content_type === 'voice')
+    {
+      nodes.push(h.audio(attachment.url));
+    } else if (attachment.content_type === 'video')
+    {
+      nodes.push(h.video(attachment.url));
+    }
+  }
+  if (typeof element.content === 'string' && element.content.length)
+  {
+    nodes.push(h.text(extractQuotedTreeContent(element.content)));
+  }
+  return nodes;
+}
+
+function stringifyQuotedElement(element: h)
+{
+  if (element.type === 'text') return element.attrs?.content || '';
+  if (element.type === 'br') return '\n';
+  if (element.type === 'at') return element.attrs?.type === 'all'
+    ? '@everyone'
+    : `<@${element.attrs?.id}>`;
+  if (element.type === 'image' || element.type === 'img')
+  {
+    const src = element.attrs?.src || element.attrs?.url;
+    return src ? `<img src="${src}">` : '';
+  }
+  return element.toString();
+}
+
+function extractQuotedContent(data: QQ.UserMessage)
+{
+  const elements = (data.msg_elements ?? []).flatMap(decodeQuotedElement);
+  if (!elements.length) return;
+  return {
+    elements,
+    content: elements.map(stringifyQuotedElement).join(''),
+  };
+}
+
+export async function decodeGroupMessage(
   bot: QQBot,
   data: QQ.UserMessage,
   message: Universal.Message = {},
@@ -79,6 +210,23 @@ export function decodeGroupMessage(
   message.id = data.id;
   registerMessageReference(data.id, data.message_scene?.ext?.map(extractReferenceFromExt).find(Boolean));
   message.elements = [];
+  const quotedReferenceId = data.message_scene?.ext?.map(extractQuotedReferenceFromExt).find(Boolean);
+  const quotedMessageId = resolveMessageIdByReference(quotedReferenceId);
+  const quotedContent = extractQuotedContent(data);
+  if (quotedMessageId || quotedContent)
+  {
+    const quote: Partial<Universal.Message> = quotedMessageId && bot.getMessage
+      ? await bot.getMessage(data.group_id, quotedMessageId).catch(() => ({ id: quotedMessageId }))
+      : quotedMessageId
+        ? { id: quotedMessageId }
+        : {};
+    if (quotedContent)
+    {
+      if (quotedContent.elements?.length) quote.elements = quotedContent.elements;
+      if (quotedContent.content) quote.content = quotedContent.content;
+    }
+    message.quote = quote;
+  }
   if (data.content.trim().length)
   {
     if (data.mentions?.length)
@@ -277,40 +425,26 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
   {
     session.type = 'message';
     session.isDirect = false;
-    decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
+    await decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
     session.channelId = session.guildId;
-    // QQ 下发的 at 用的是机器人 openid，Koishi 用 selfId（AppID）判断是否 at 自己，需要替换
-    const botOpenid = (input.d.mentions?.find(
-      (m): m is { scope: 'single'; id: string; is_you?: boolean; } =>
-        m.scope === 'single' && !!(m as { is_you?: boolean; }).is_you,
-    ))?.id;
-    if (botOpenid)
-    {
-      session.event.message.elements = normalizeAtSelf(session.elements, session.selfId, botOpenid);
-    }
-    // 若替换后仍没有 at selfId，则补一个（兜底）
+    // QQ 下发的 at 用的是机器人 openid，Koishi 用 selfId 判断是否 at 自己。
+    normalizeGroupMessageAtSelf(session.event.message, session.selfId, resolveBotOpenid(input.d, bot));
+    // 兜底补一个 at selfId，避免平台漏发识别信息。
     const alreadyAtBot = session.elements.some(el => el.type === 'at' && el.attrs?.id === session.selfId);
     if (!alreadyAtBot) session.elements.unshift(h.at(session.selfId));
   } else if (input.t === 'GROUP_MESSAGE_CREATE')
   {
     session.type = 'message';
     session.isDirect = false;
-    decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
+    await decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
     session.channelId = session.guildId;
-    // 全量消息里用户若 at 了机器人，同样需要将 openid 替换为 selfId
-    const botOpenid2 = (input.d.mentions?.find(
-      (m): m is { scope: 'single'; id: string; is_you?: boolean; } =>
-        m.scope === 'single' && !!(m as { is_you?: boolean; }).is_you,
-    ))?.id;
-    if (botOpenid2)
-    {
-      session.event.message.elements = normalizeAtSelf(session.elements, session.selfId, botOpenid2);
-    }
+    // 全量群消息里也要统一替换成 selfId。
+    normalizeGroupMessageAtSelf(session.event.message, session.selfId, resolveBotOpenid(input.d, bot));
   } else if (input.t === 'C2C_MESSAGE_CREATE')
   {
     session.type = 'message';
     session.isDirect = true;
-    decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
+    await decodeGroupMessage(bot, input.d, session.event.message = {}, session.event);
     session.channelId = toPrivateChannelId(session.userId);
   } else if (input.t === 'FRIEND_ADD')
   {
@@ -384,7 +518,7 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
         guild: { id: input.d.guild_id },
         member: decodeGuildMember(input.d),
         user: decodeUser(input.d.user),
-    };
+      };
     session.event.guild = guild;
     session.event.member = member;
     session.event.user = user;

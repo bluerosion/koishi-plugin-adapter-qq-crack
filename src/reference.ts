@@ -64,10 +64,29 @@ export function resolveMessageReference(messageId: string | undefined)
   return referenceMap.get(messageId) || messageId;
 }
 
+export function resolveMessageIdByReference(referenceId: string | undefined)
+{
+  trimReferenceCache();
+  if (!referenceId) return;
+  if (!isReferenceId(referenceId)) return referenceId;
+  for (let i = referenceEntries.length - 1; i >= 0; i--)
+  {
+    const entry = referenceEntries[i];
+    if (entry.referenceId === referenceId) return entry.messageId;
+  }
+}
+
 export function extractReferenceFromExt(value: string | undefined)
 {
   if (!value) return;
   if (isReferenceId(value)) return value;
   const capture = /^msg_idx=(REFIDX_.+)$/.exec(value);
+  return capture?.[1];
+}
+
+export function extractQuotedReferenceFromExt(value: string | undefined)
+{
+  if (!value) return;
+  const capture = /^ref_msg_idx=(REFIDX_.+)$/.exec(value);
   return capture?.[1];
 }

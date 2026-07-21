@@ -1401,6 +1401,20 @@ export namespace Forum
 
 export interface UserMessage
 {
+  msg_elements?: {
+    content?: string;
+    message_type?: number;
+    msg_idx?: string;
+    attachments?: {
+      content?: string;
+      content_type: string;
+      filename: string;
+      height?: number;
+      size?: number;
+      url: string;
+      width?: number;
+    }[];
+  }[];
   id: string;
   author: {
     id: string;

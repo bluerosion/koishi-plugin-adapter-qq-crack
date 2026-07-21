@@ -23,6 +23,7 @@ export class QQBot<C extends Context = Context, T extends QQBot.Config = QQBot.C
   };
 
   public guildBot: QQGuildBot<C>;
+  public selfOpenid?: string;
 
   internal: GroupInternal;
   http: HTTP;
@@ -62,6 +63,7 @@ export class QQBot<C extends Context = Context, T extends QQBot.Config = QQBot.C
   async initialize()
   {
     const user = await this.guildBot.internal.getMe();
+    if (user.union_openid) this.selfOpenid = user.union_openid;
     if (!this.user) this.user = decodeUser(user);
     else Object.assign(this.user, decodeUser(user));
   }

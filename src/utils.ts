@@ -459,17 +459,15 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
   } else if (input.t === 'GROUP_ADD_ROBOT')
   {
     session.type = 'guild-added';
-    session.timestamp = input.d.timestamp;
+    session.timestamp = input.d.timestamp * 1000;
     session.guildId = input.d.group_openid;
     session.operatorId = input.d.op_member_openid;
-    session.messageId = input.id;
   } else if (input.t === 'GROUP_DEL_ROBOT')
   {
     session.type = 'guild-removed';
-    session.timestamp = input.d.timestamp;
+    session.timestamp = input.d.timestamp * 1000;
     session.guildId = input.d.group_openid;
     session.operatorId = input.d.op_member_openid;
-    session.messageId = input.id;
   } else if (input.t === 'INTERACTION_CREATE')
   {
     session.type = 'interaction/button';
@@ -525,10 +523,6 @@ export async function adaptSession<C extends Context = Context>(bot: QQBot<C>, i
     session.event.member = member;
     session.event.user = user;
     if (!session.event.user.name && session.event.member.user?.name) session.event.user.name = session.event.member.user.name;
-    if (input.t === 'GROUP_MEMBER_ADD' || input.t === 'GROUP_MEMBER_REMOVE')
-    {
-      session.messageId = input.id;
-    }
   } else
   {
     return;

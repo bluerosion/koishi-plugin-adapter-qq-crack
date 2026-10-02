@@ -10,7 +10,6 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
   _s: number = null;
   _disposeHeartbeat?: () => void;
   _acked = true;
-  _zombieRestarting = false;
 
   async prepare()
   {
@@ -46,8 +45,17 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
   {
     if (!this._acked)
     {
-      this.bot.logger.warn('zombied connection');
-      return this.restartZombiedConnection();
+      this.bot.logger.warn('zombied connection, closing socket to reconnect');
+      this._disposeHeartbeat?.();
+      this._disposeHeartbeat = null;
+      if (typeof (this.socket as any)?.terminate === 'function')
+      {
+        (this.socket as any).terminate();
+      } else
+      {
+        this.socket?.close(4000, 'zombied connection');
+      }
+      return;
     }
     this.socket.send(JSON.stringify({
       op: Opcode.HEARTBEAT,
@@ -56,22 +64,9 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
     this._acked = false;
   }
 
-  restartZombiedConnection()
-  {
-    if (this._zombieRestarting) return;
-    this._zombieRestarting = true;
-    this._disposeHeartbeat?.();
-    this._disposeHeartbeat = null;
-    const socket = this.socket;
-    this.bot.ctx.setTimeout(() =>
-    {
-      void this.start();
-    }, 0);
-    socket?.close();
-  }
-
   async accept()
   {
+    this._acked = true;
     this.socket.addEventListener('message', async ({ data }) =>
     {
       const parsed: Payload = JSON.parse(data.toString());
@@ -81,6 +76,7 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
       }
       if (parsed.op === Opcode.HELLO)
       {
+        this._acked = true;
         const token = await this.bot.getWebSocketToken();
         if (this._sessionId)
         {
@@ -112,10 +108,16 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
       {
         this._sessionId = '';
         this._s = null;
-        this.bot.logger.warn('offline: invalid session');
+        this.bot.logger.warn('offline: invalid session, closing socket to reconnect with identify');
+        this._disposeHeartbeat?.();
+        this._disposeHeartbeat = null;
+        this.socket?.close(4000, 'invalid session');
       } else if (parsed.op === Opcode.RECONNECT)
       {
-        this.bot.logger.warn('offline: server request reconnect');
+        this.bot.logger.warn('offline: server request reconnect, closing socket to reconnect');
+        this._disposeHeartbeat?.();
+        this._disposeHeartbeat = null;
+        this.socket?.close(4000, 'server request reconnect');
       } else if (parsed.op === Opcode.DISPATCH)
       {
         this.bot.dispatch(this.bot.session({
@@ -126,7 +128,6 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
         this._s = parsed.s;
         if (parsed.t === 'READY')
         {
-          this._zombieRestarting = false;
           this._sessionId = parsed.d.session_id;
           this.bot.user = decodeUser(parsed.d.user);
           this.bot.guildBot.user = this.bot.user;
@@ -141,7 +142,6 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
         }
         if (parsed.t === 'RESUMED')
         {
-          this._zombieRestarting = false;
           return this.bot.online();
         }
         const session = await adaptSession(this.bot, parsed);
@@ -152,7 +152,6 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
     this.socket.addEventListener('close', (e) =>
     {
       logDebug(this.bot, 'websocket closed, code %o, reason: %s', e.code, e.reason);
-      if (this._zombieRestarting) return;
       if (e.code > 4000 && ![4008, 4009].includes(e.code))
       {
         this._sessionId = '';
@@ -161,6 +160,13 @@ export class WsClient<C extends Context = Context> extends Adapter.WsClient<C, Q
       this._disposeHeartbeat?.();
       this._disposeHeartbeat = null;
     });
+  }
+
+  async stop()
+  {
+    this._disposeHeartbeat?.();
+    this._disposeHeartbeat = null;
+    await super.stop();
   }
 }
 
